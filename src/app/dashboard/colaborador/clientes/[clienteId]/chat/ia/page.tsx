@@ -1,43 +1,69 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
-import ChatWindow from '@/components/chat/ChatWindow'
+import ChatWindow, { type Msg } from '@/components/chat/ChatWindow'
+import { useCableChat } from '@/lib/useCableChat'
 
 type Chat = { id:number; client_id:number; chat_type:'cliente'|'ia' }
-type Msg = { id:number; content:string; sender_type:'client'|'user'|'ia'; created_at:string }
 
-export default function ChatIAColab() {
-  const params = useParams()
+export default function ChatIaColab() {
+  const params = useParams() as Record<string, string | string[] | undefined>
+
+  // aceita [clienteId] OU [id]
   const clienteId = useMemo(() => {
-    const v = (params as any)?.clienteId
-    if (!v) return ''
-    return Array.isArray(v) ? v[0] : String(v)
+    const raw = params?.clienteId ?? params?.id
+    if (!raw) return ''
+    return Array.isArray(raw) ? raw[0] : raw
   }, [params])
 
   const [chatId, setChatId] = useState<number | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [seed, setSeed]     = useState<Msg[] | null>(null)
+  const [error, setError]   = useState<string | null>(null)
+
+  const [pushMsg, setPushMsg] = useState<((m: Msg) => void) | null>(null)
+  const registerPush = useCallback((fn: (m: Msg) => void) => {
+    setPushMsg(() => fn)
+  }, [])
 
   useEffect(() => {
     if (!clienteId) return
-    console.log('[ChatIA] clienteId =', clienteId)
-
-    fetch(`/api/user/clients/client/${clienteId}/chats`, { cache:'no-store' })
-      .then(async r => {
-        if (!r.ok) throw new Error(String(r.status))
-        return r.json() as Promise<Chat[]>
-      })
-      .then(list => {
-        const c = list.find(x => x.chat_type === 'ia')
+    let alive = true
+    ;(async () => {
+      try {
+        const rChats = await fetch(`/api/user/clients/client/${clienteId}/chats`, { cache: 'no-store' })
+        if (!rChats.ok) throw new Error(String(rChats.status))
+        const chats: Chat[] = await rChats.json()
+        const c = chats.find(x => x.chat_type === 'ia')
         if (!c) throw new Error('Chat tipo "ia" não encontrado')
+
+        const rMsgs = await fetch(`/api/user/clients/client/${clienteId}/chats/${c.id}/messages`, { cache: 'no-store' })
+        if (!rMsgs.ok) throw new Error(String(rMsgs.status))
+        const msgs: Msg[] = await rMsgs.json()
+
+        if (!alive) return
         setChatId(c.id)
-      })
-      .catch(e => setError(`Falha ao obter chat IA (${e.message})`))
+        setSeed(msgs)
+      } catch (e:any) {
+        if (!alive) return
+        setError(`Falha ao preparar chat IA (${e?.message ?? 'erro'})`)
+      }
+    })()
+    return () => { alive = false }
   }, [clienteId])
+
+  const onReceive = useCallback((m: any) => {
+    if (!pushMsg) return
+    const msg: Msg = { id: m.id, content: m.content, sender_type: m.sender_type, created_at: m.created_at }
+    pushMsg(msg)
+  }, [pushMsg])
+
+  useCableChat(chatId, onReceive)
 
   const fetchMessages = useMemo(() => {
     return async (): Promise<Msg[]> => {
-      if (!chatId || !clienteId) return []
-      const r = await fetch(`/api/user/clients/client/${clienteId}/chats/${chatId}/messages`, { cache:'no-store' })
+      if (!clienteId || !chatId) return []
+      const r = await fetch(`/api/user/clients/client/${clienteId}/chats/${chatId}/messages`, { cache: 'no-store' })
       if (!r.ok) throw new Error(String(r.status))
       return r.json()
     }
@@ -45,20 +71,29 @@ export default function ChatIAColab() {
 
   const sendMessage = useMemo(() => {
     return async (content: string): Promise<Msg> => {
-      if (!chatId || !clienteId) throw new Error('Chat não inicializado')
+      if (!clienteId || !chatId) throw new Error('Chat não inicializado')
       const r = await fetch(`/api/user/clients/client/${clienteId}/chats/${chatId}/messages`, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ content, sender_type:'user' }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // IA responderá no backend e virá por Cable
+        body: JSON.stringify({ content }),
       })
       if (!r.ok) throw new Error(String(r.status))
       return r.json()
     }
   }, [clienteId, chatId])
 
-  if (!clienteId) return <div className="p-6">Obtendo cliente...</div>
-  if (error) return <div className="p-6 text-red-600">{error}</div>
-  if (!chatId) return <div className="p-6">Carregando chat IA...</div>
+  if (!clienteId) return <div className="p-6">Obtendo cliente…</div>
+  if (error)      return <div className="p-6 text-red-600">{error}</div>
+  if (!chatId || !seed) return <div className="p-6">Carregando chat IA…</div>
 
-  return <ChatWindow title="Chat IA" fetchMessages={fetchMessages} sendMessage={sendMessage} />
+  return (
+    <ChatWindow
+      title="Chat com IA"
+      initialMessages={seed}
+      fetchMessages={fetchMessages}
+      sendMessage={sendMessage}
+      onRegisterPush={registerPush}
+    />
+  )
 }

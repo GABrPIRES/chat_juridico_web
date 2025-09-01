@@ -1,92 +1,157 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import MessageBubble from './MessageBubble'
-import MessageInput from './MessageInput'
 
-type Msg = { id:number; content:string; sender_type:'client'|'user'|'ia'; created_at:string }
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+export type Msg = {
+  id: number
+  content: string
+  sender_type: 'client' | 'user' | 'ia'
+  created_at: string
+}
+
+type Props = {
+  title: string
+  // REST
+  fetchMessages: () => Promise<Msg[]>
+  sendMessage: (content: string) => Promise<Msg>
+  // Realtime
+  initialMessages?: Msg[]
+  onRegisterPush?: (fn: (m: Msg) => void) => void
+}
 
 export default function ChatWindow({
-  fetchMessages,               // () => Promise<Msg[]>
-  sendMessage,                 // (content:string) => Promise<Msg>
   title,
-}:{ 
-  fetchMessages:()=>Promise<Msg[]>;
-  sendMessage:(content:string)=>Promise<Msg>;
-  title:string;
-}) {
+  fetchMessages,
+  sendMessage,
+  initialMessages,
+  onRegisterPush,
+}: Props) {
   const [msgs, setMsgs] = useState<Msg[]>([])
-  const [loaded, setLoaded] = useState(false)     // <- controla 1º carregamento
-  const [error, setError] = useState<string|null>(null)
+  const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
-  const boxRef = useRef<HTMLDivElement>(null)
+  const [error, setError] = useState<string | null>(null)
+  const boxRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
 
+  // hidrata pelos seeds (se vier) uma única vez
   useEffect(() => {
-    let alive = true
-    setLoaded(false)
-    setError(null)
+    if (!initialMessages) return
+    setMsgs(initialMessages)
+    setLoading(false)
+  }, [initialMessages])
 
+  // se não veio seed, busca via REST
+  useEffect(() => {
+    if (initialMessages) return
+    let alive = true
     ;(async () => {
       try {
-        const data = await fetchMessages()
+        const list = await fetchMessages()
         if (!alive) return
-        setMsgs(data)
-      } catch (e:any) {
+        setMsgs(list)
+      } catch (e: any) {
         if (!alive) return
-        setError(e?.message ? `Falha ao carregar mensagens (${e.message})` : 'Falha ao carregar mensagens')
+        setError(`Falha ao carregar mensagens (${e?.message ?? 'erro'})`)
       } finally {
-        if (!alive) return
-        setLoaded(true)
-        queueMicrotask(() => boxRef.current?.scrollTo({ top: 9e9, behavior: 'auto' }))
+        if (alive) setLoading(false)
       }
     })()
-
-    return () => { alive = false }
-  }, [fetchMessages])
-
-  async function handleSend(t: string) {
-    if (!t.trim()) return
-    setSending(true)
-    try {
-      const saved = await sendMessage(t)
-      setMsgs(m => [...m, saved])
-      queueMicrotask(() => boxRef.current?.scrollTo({ top: 9e9, behavior: 'smooth' }))
-    } finally {
-      setSending(false)
+    return () => {
+      alive = false
     }
-  }
+  }, [initialMessages, fetchMessages])
+
+  // scroll pro fim quando as mensagens mudarem
+  useEffect(() => {
+    boxRef.current?.scrollTo({ top: 9e9, behavior: 'smooth' })
+  }, [msgs.length])
+
+  // permitir “empurrar” mensagens vindas do websocket
+  useEffect(() => {
+    if (!onRegisterPush) return
+    const push = (m: Msg) => {
+      setMsgs((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]))
+    }
+    onRegisterPush(push)
+  }, [onRegisterPush])
+
+  const onSend = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault()
+      if (sending) return
+      const value = inputRef.current?.value?.trim() ?? ''
+      if (!value) return
+      try {
+        setSending(true)
+        const created = await sendMessage(value)
+        // normalmente o broadcast vai trazer a msg; ainda assim, garanta não-duplicação:
+        setMsgs((prev) => (prev.some((x) => x.id === created.id) ? prev : [...prev, created]))
+        if (inputRef.current) inputRef.current.value = ''
+      } catch (e: any) {
+        setError(`Falha ao enviar (${e?.message ?? 'erro'})`)
+      } finally {
+        setSending(false)
+      }
+    },
+    [sendMessage, sending]
+  )
+
+  const badge = useMemo(() => {
+    return {
+      client: 'bg-slate-100 text-slate-900',
+      user: 'bg-blue-600 text-white',
+      ia: 'bg-zinc-900 text-white',
+    } as const
+  }, [])
 
   return (
-    <main className="p-6 flex flex-col h-[calc(100vh-64px)]">
-      <h1 className="text-lg font-semibold mb-3">{title}</h1>
-
-      <div
-        ref={boxRef}
-        className="flex-1 overflow-y-auto space-y-2 border rounded p-3 bg-gray-50 flex flex-col"
-      >
-        {!loaded && (
-          <div className="text-sm text-gray-600">Carregando mensagens...</div>
-        )}
-
-        {loaded && error && (
-          <div className="text-sm text-red-600">{error}</div>
-        )}
-
-        {loaded && !error && msgs.length === 0 && (
-          <div className="text-sm text-gray-600">Nenhuma mensagem ainda.</div>
-        )}
-
-        {loaded && !error && msgs.length > 0 && msgs.map(m => (
-          <MessageBubble key={m.id} from={m.sender_type} text={m.content} />
-        ))}
+    <div className="flex h-[calc(100vh-120px)] w-full max-w-3xl flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between rounded-t-2xl border-b border-slate-200 px-5 py-3">
+        <h1 className="text-lg font-semibold text-slate-800">{title}</h1>
       </div>
 
-      {/* Input só aparece após carregar (independente de haver 0 mensagens) */}
-      {loaded && !error && (
-        <>
-          <div className="my-3" />
-          <MessageInput onSend={handleSend} disabled={sending} />
-        </>
+      <div ref={boxRef} className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        {loading ? (
+          <div className="space-y-2">
+            <div className="h-5 w-32 animate-pulse rounded bg-slate-200" />
+            <div className="h-5 w-72 animate-pulse rounded bg-slate-200" />
+            <div className="h-5 w-52 animate-pulse rounded bg-slate-200" />
+          </div>
+        ) : (
+          msgs.map((m) => (
+            <div key={m.id} className="flex flex-col">
+              <div
+                className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm shadow ${badge[m.sender_type]}`}
+              >
+                <p className="whitespace-pre-wrap">{m.content}</p>
+              </div>
+              <span className="mt-1 text-xs text-slate-400">
+                {new Date(m.created_at).toLocaleString()}
+              </span>
+            </div>
+          ))
+        )}
+        {error && <div className="text-sm text-red-600">{error}</div>}
+      </div>
+
+      {/* input só aparece quando já carregou */}
+      {!loading && (
+        <form onSubmit={onSend} className="flex gap-2 border-t border-slate-200 p-3">
+          <input
+            ref={inputRef}
+            className="flex-1 rounded-xl border border-slate-300 px-3 py-2 outline-none focus:border-slate-400"
+            placeholder="Digite sua mensagem…"
+            disabled={sending}
+          />
+          <button
+            type="submit"
+            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={sending}
+          >
+            Enviar
+          </button>
+        </form>
       )}
-    </main>
+    </div>
   )
 }

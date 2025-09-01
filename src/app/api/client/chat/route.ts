@@ -1,15 +1,14 @@
-// src/app/api/user/clients/client/[id]/chats/[chatId]/route.ts
+// src/app/api/client/chat/route.ts
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api'
 
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string; chatId: string }> }) {
-  const { id, chatId } = await ctx.params
-  const token = (await cookies()).get('token')?.value
+export async function GET() {
+  const token = (await cookies()).get('client_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const upstream = await fetch(`${API}/user/clients/${id}/chats/${chatId}/messages`, {
+  const upstream = await fetch(`${API}/client/chat`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
   })
@@ -21,13 +20,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string; ch
   })
 }
 
-export async function POST(req: Request, ctx: { params: Promise<{ id: string; chatId: string }> }) {
-  const { id, chatId } = await ctx.params
-  const token = (await cookies()).get('token')?.value
+export async function POST(req: Request) {
+  const token = (await cookies()).get('client_token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json() as { content: string }
-  const upstream = await fetch(`${API}/user/clients/${id}/chats/${chatId}/messages`, {
+  const upstream = await fetch(`${API}/client/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ message: { content: body.content } }),
