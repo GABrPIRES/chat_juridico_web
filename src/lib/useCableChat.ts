@@ -16,20 +16,43 @@ export function useCableChat(chatId: number | null, onReceive: (m: IncomingMsg) 
 
   useEffect(() => {
     if (!chatId) return
-    const cable = getCable() // ou getCable({ token }) caso precise
-    if (!cable) return
 
-    // Cria a subscription apenas quando chatId mudar
-    const sub = cable.subscriptions.create(
-      { channel: 'ChatChannel', chat_id: chatId },
-      {
-        received: (data: IncomingMsg) => onReceive(data),
+    let isSubscribed = true
+
+    // Função assíncrona para buscar o token e conectar
+    const connectToCable = async () => {
+      try {
+        // 1. Busca o token da nossa API de frontend
+        const tokenResponse = await fetch('/api/ws-token')
+        if (!tokenResponse.ok) {
+          throw new Error('Falha ao obter token para WebSocket')
+        }
+        const { token } = await tokenResponse.json()
+
+        // 2. Passa o token para a função que cria a conexão
+        const cable = getCable({ token })
+        if (!cable || !isSubscribed) return
+
+        // 3. Cria a inscrição no canal com o token
+        const sub = cable.subscriptions.create(
+          { channel: 'ChatChannel', chat_id: chatId },
+          {
+            received: (data: IncomingMsg) => onReceive(data),
+          }
+        )
+        subRef.current = sub
+      } catch (error) {
+        console.error('Erro ao conectar ao Action Cable:', error)
       }
-    )
-    subRef.current = sub
+    }
+
+    connectToCable()
 
     return () => {
-      try { subRef.current?.unsubscribe() } catch {}
+      isSubscribed = false
+      try {
+        subRef.current?.unsubscribe()
+      } catch {}
       subRef.current = null
     }
   }, [chatId, onReceive])

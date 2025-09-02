@@ -5,7 +5,7 @@ import { cookies } from 'next/headers'
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api'
 
 export async function GET() {
-  const token = (await cookies()).get('client_token')?.value
+  const token = (await cookies()).get('token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const upstream = await fetch(`${API}/client/chat`, {
@@ -21,7 +21,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const token = (await cookies()).get('client_token')?.value
+  const token = (await cookies()).get('token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json() as { content: string }
