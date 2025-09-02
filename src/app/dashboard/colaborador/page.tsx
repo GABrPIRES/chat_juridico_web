@@ -6,6 +6,7 @@ export default function ColaboradorHome() {
         <ul className="mt-3 list-disc pl-6 text-sm">
           <li><a href="/dashboard/colaborador/clientes">Clientes</a></li>
           <li><a href="/dashboard/colaborador/permissoes">Permissões</a></li>
+          <li><a href="/dashboard/colaborador/usuarios">Usuários</a></li>
         </ul>
       </main>
     )
