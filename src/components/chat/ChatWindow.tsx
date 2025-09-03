@@ -17,6 +17,7 @@ type Props = {
   // Realtime
   initialMessages?: Msg[]
   onRegisterPush?: (fn: (m: Msg) => void) => void
+  isLocked?: boolean
 }
 
 export default function ChatWindow({
@@ -25,6 +26,7 @@ export default function ChatWindow({
   sendMessage,
   initialMessages,
   onRegisterPush,
+  isLocked = false,
 }: Props) {
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [loading, setLoading] = useState(true)
@@ -136,21 +138,27 @@ export default function ChatWindow({
 
       {/* input só aparece quando já carregou */}
       {!loading && (
-        <form onSubmit={onSend} className="flex gap-2 border-t border-slate-200 p-3">
-          <input
-            ref={inputRef}
-            className="flex-1 rounded-xl border border-slate-300 px-3 py-2 outline-none focus:border-slate-400"
-            placeholder="Digite sua mensagem…"
-            disabled={sending}
-          />
-          <button
-            type="submit"
-            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={sending}
-          >
-            Enviar
-          </button>
-        </form>
+        isLocked ? (
+          <div className="border-t border-slate-200 p-4 text-center text-sm text-gray-500 bg-gray-50">
+            Este chat está temporariamente desativado.
+          </div>
+        ) : (
+          <form onSubmit={onSend} className="flex gap-2 border-t border-slate-200 p-3">
+            <input
+              ref={inputRef}
+              className="flex-1 rounded-xl border border-slate-300 px-3 py-2 outline-none focus:border-slate-400"
+              placeholder="Digite sua mensagem…"
+              disabled={sending}
+            />
+            <button
+              type="submit"
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={sending}
+            >
+              Enviar
+            </button>
+          </form>
+        )
       )}
     </div>
   )

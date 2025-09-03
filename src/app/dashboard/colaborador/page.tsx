@@ -7,6 +7,7 @@ export default function ColaboradorHome() {
           <li><a href="/dashboard/colaborador/clientes">Clientes</a></li>
           <li><a href="/dashboard/colaborador/permissoes">Permissões</a></li>
           <li><a href="/dashboard/colaborador/usuarios">Usuários</a></li>
+          <li><a href="/dashboard/colaborador/atribuicoes">Atribuir Clientes</a></li>
         </ul>
       </main>
     )

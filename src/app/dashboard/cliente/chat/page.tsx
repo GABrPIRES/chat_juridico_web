@@ -5,12 +5,14 @@ import ChatWindow from '@/components/chat/ChatWindow'
 import { useCableChat } from '@/lib/useCableChat'
 
 type Msg = { id:number; content:string; sender_type:'client'|'user'|'ia'; created_at:string }
-type ChatShow = { chat_id?: number; messages?: Msg[] } | Msg[]
+type ChatShow = { chat_id?: number; messages?: Msg[]; client_status?: 'active' | 'inactive' } | Msg[]
 
 export default function ClienteChatPage() {
   const [chatId, setChatId] = useState<number|null>(null)
   const [seed, setSeed] = useState<Msg[]|null>(null)
   const [error, setError] = useState<string|null>(null)
+
+  const [clientStatus, setClientStatus] = useState<'active' | 'inactive'>('active')
 
   // Função para o ChatWindow registrar como empurrar mensagens recebidas em tempo real
   const [pushMsg, setPushMsg] = useState<((m:Msg)=>void) | null>(null)
@@ -23,6 +25,18 @@ export default function ClienteChatPage() {
     let alive = true
     ;(async () => {
       try {
+        const rClient = await fetch('/api/client/me', { cache:'no-store' })
+        if (!rClient.ok) throw new Error('Falha ao verificar status do cliente')
+        const clientData = await rClient.json()
+        if (!alive) return
+        setClientStatus(clientData.status)
+
+        // Se o cliente estiver inativo, não precisa carregar o chat
+        if (clientData.status === 'inactive') {
+          setSeed([]) // Define as mensagens como vazias para renderizar o aviso
+          return;
+        }
+
         const r = await fetch('/api/client/chat', { cache:'no-store' })
         if (!r.ok) throw new Error(String(r.status))
         const data: ChatShow = await r.json()
@@ -81,10 +95,11 @@ export default function ClienteChatPage() {
   return (
     <ChatWindow
       title="Atendimento"
-      initialMessages={seed}            // hidrata a lista no 1º render
-      fetchMessages={fetchMessages}     // mantém refresh via REST
+      initialMessages={seed}
+      fetchMessages={fetchMessages}
       sendMessage={sendMessage}
-      onRegisterPush={registerPush}     // permite empurrar msgs do realtime
+      onRegisterPush={registerPush}
+      isLocked={clientStatus === 'inactive'} // <-- Nova prop
     />
   )
 }
