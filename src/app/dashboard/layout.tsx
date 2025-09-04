@@ -9,7 +9,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold">Chat Jurídico</h1>
           <nav className="space-x-4">
-            nav
+            <a href="/dashboard/colaborador/perfil" className="text-sm hover:underline">Editar Perfil</a>
           </nav>
         </div>
       </header>
