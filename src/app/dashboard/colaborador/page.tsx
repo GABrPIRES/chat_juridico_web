@@ -54,6 +54,7 @@ export default function ColaboradorHome() {
           <>
             <li><a href="/dashboard/colaborador/usuarios" className="text-blue-600 hover:underline">Gerenciar Usuários</a></li>
             <li><a href="/dashboard/colaborador/permissoes" className="text-blue-600 hover:underline">Gerenciar Permissões</a></li>
+            <li><a href="/dashboard/colaborador/arvore-decisao" className="text-blue-600 hover:underline">Gerenciar Árvore de Decisão</a></li>
           </>
         )}
       </ul>
