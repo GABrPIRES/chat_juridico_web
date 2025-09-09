@@ -4,19 +4,22 @@ import { cookies } from 'next/headers'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api'
 
+// O segundo argumento é o 'context' (ctx)
 export async function GET(
   _req: Request,
-  { params }: { params: { id: string } }
+  ctx: { params: { id: string } }
 ) {
+  // A correção é aguardar (await) os parâmetros aqui
+  const { id } = ctx.params;
   const token = (await cookies()).get('token')?.value
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const upstream = await fetch(`${API}/decision_tree/questions/${params.id}`, {
+  // Agora usamos o 'id' que foi aguardado
+  const upstream = await fetch(`${API}/decision_tree/questions/${id}`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
   })
 
-  // Adicionamos tratamento de erro para mais clareza
   if (!upstream.ok) {
     const error = await upstream.json()
     return NextResponse.json(error, { status: upstream.status })

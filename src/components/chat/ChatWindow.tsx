@@ -1,68 +1,61 @@
 'use client'
-import { useCallback, useEffect, useMemo, useRef, useState, FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, FormEvent } from 'react'
 
 // Nossos tipos de dados
 export type Msg = { id: number; content: string; sender_type: 'client' | 'user' | 'ia'; created_at: string }
 export type Option = { id: number; content: string; next_question_id: number | null }
 export type Question = { id: number; content: string; options: Option[] }
 
-// O ChatWindow agora pode receber uma pergunta interativa
+// Props atualizadas e simplificadas
 type Props = {
   title: string
-  initialMessages?: Msg[]
-  sendMessage: (content: string) => Promise<Msg>
-  onRegisterPush?: (fn: (m: Msg) => void) => void
+  messages: Msg[] // Recebe a lista de mensagens completa
+  onSendMessage: (content: string) => Promise<void> // Função para enviar mensagem
+  isLoading?: boolean
+  
+  // Props para o fluxo da árvore de decisões
   interactiveQuestion?: Question | null
   onOptionClick?: (option: Option) => void
-  isLocked?: boolean
+  isInputLocked?: boolean
 }
 
 export default function ChatWindow({
   title,
-  initialMessages = [],
-  sendMessage,
-  onRegisterPush,
+  messages,
+  onSendMessage,
+  isLoading = false,
   interactiveQuestion,
   onOptionClick,
-  isLocked = false,
+  isInputLocked = false,
 }: Props) {
-  const [msgs, setMsgs] = useState<Msg[]>(initialMessages)
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [isSending, setIsSending] = useState(false)
   const boxRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  useEffect(() => {
-    setMsgs(initialMessages)
-  }, [initialMessages])
-
+  // Scroll para o fim sempre que as mensagens ou a pergunta interativa mudarem
   useEffect(() => {
     boxRef.current?.scrollTo({ top: 9e9, behavior: 'smooth' })
-  }, [msgs.length, interactiveQuestion])
+  }, [messages, interactiveQuestion])
 
-  useEffect(() => {
-    if (!onRegisterPush) return
-    const push = (m: Msg) => {
-      setMsgs((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]))
-    }
-    onRegisterPush(push)
-  }, [onRegisterPush])
-
-  const onSend = useCallback(async (e: FormEvent) => {
+  // Função para lidar com o envio do formulário
+  const handleSend = async (e: FormEvent) => {
     e.preventDefault()
-    if (sending) return
-    const value = inputRef.current?.value?.trim() ?? ''
-    if (!value) return
+    if (isSending || !inputRef.current?.value) return
+    
+    const content = inputRef.current.value
+    inputRef.current.value = ''
+    
+    setIsSending(true)
     try {
-      setSending(true)
-      await sendMessage(value)
-      if (inputRef.current) inputRef.current.value = ''
-    } catch (e: any) {
-      setError(`Falha ao enviar (${e?.message ?? 'erro'})`)
+      await onSendMessage(content)
+    } catch (error) {
+      console.error("Falha ao enviar mensagem:", error)
+      // Opcional: retornar a mensagem ao input se falhar
+      if(inputRef.current) inputRef.current.value = content;
     } finally {
-      setSending(false)
+      setIsSending(false)
     }
-  }, [sendMessage, sending])
+  }
 
   const badge = useMemo(() => ({
     client: 'self-end bg-blue-600 text-white',
@@ -71,23 +64,24 @@ export default function ChatWindow({
   }), [])
 
   return (
-    <div className="flex h-[calc(100vh-120px)] w-full max-w-3xl flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between rounded-t-2xl border-b border-slate-200 px-5 py-3">
+    <div className="flex h-[calc(100vh-120px)] w-full max-w-3xl flex-col rounded-2xl border bg-white shadow-sm">
+      <div className="flex items-center justify-between rounded-t-2xl border-b px-5 py-3">
         <h1 className="text-lg font-semibold text-slate-800">{title}</h1>
       </div>
 
       <div ref={boxRef} className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        {isLoading && <p>Carregando...</p>}
         {/* Renderiza mensagens normais */}
-        {msgs.map((m) => (
+        {messages.map((m) => (
           <div key={m.id} className="flex flex-col">
             <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm shadow ${badge[m.sender_type]}`}>
               <p className="whitespace-pre-wrap">{m.content}</p>
             </div>
-            <span className="mt-1 text-xs text-slate-400">{new Date(m.created_at).toLocaleString()}</span>
+            <span className="mt-1 self-start text-xs text-slate-400">{new Date(m.created_at).toLocaleString()}</span>
           </div>
         ))}
 
-        {/* Renderiza a pergunta interativa como se fosse uma mensagem de bot */}
+        {/* Renderiza a pergunta interativa */}
         {interactiveQuestion && (
           <div className="flex flex-col">
             <div className="max-w-[80%] self-start rounded-2xl bg-zinc-900 px-3 py-2 text-sm text-white shadow">
@@ -106,20 +100,19 @@ export default function ChatWindow({
             </div>
           </div>
         )}
-        {error && <div className="text-sm text-red-600">{error}</div>}
       </div>
       
-      {/* O formulário de input agora fica desabilitado durante o fluxo da árvore */}
-      <div className="border-t border-slate-200 p-3">
-        {isLocked ? (
+      {/* Formulário de input condicional */}
+      <div className="border-t p-3">
+        {isInputLocked ? (
           <div className="text-center text-sm text-gray-500">
-            {interactiveQuestion ? 'Por favor, selecione uma das opções acima para continuar.' : 'Aguarde...'}
+            {interactiveQuestion ? 'Por favor, selecione uma das opções acima.' : 'Aguarde...'}
           </div>
         ) : (
-          <form onSubmit={onSend} className="flex gap-2">
-            <input ref={inputRef} className="flex-1 rounded-xl border border-slate-300 px-3 py-2 outline-none" placeholder="Digite sua mensagem…" disabled={sending} />
-            <button type="submit" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white" disabled={sending}>
-              Enviar
+          <form onSubmit={handleSend} className="flex gap-2">
+            <input ref={inputRef} className="flex-1 rounded-xl border px-3 py-2 outline-none" placeholder="Digite sua mensagem…" disabled={isSending} />
+            <button type="submit" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white" disabled={isSending}>
+              {isSending ? 'Enviando...' : 'Enviar'}
             </button>
           </form>
         )}

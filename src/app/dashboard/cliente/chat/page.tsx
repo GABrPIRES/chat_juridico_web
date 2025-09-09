@@ -11,8 +11,8 @@ export default function ClienteChatPage() {
   const [chatStatus, setChatStatus] = useState<'pending_tree' | 'ongoing' | 'closed'>('ongoing')
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null)
   const [treeHistory, setTreeHistory] = useState<string[]>([])
-  const [finalQuery, setFinalQuery] = useState('')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null) // Estado para guardar a mensagem de erro
 
   const pushMsg = useCallback((msg: Msg) => {
     setMessages(prev => [...prev, msg])
@@ -20,17 +20,34 @@ export default function ClienteChatPage() {
 
   useEffect(() => {
     async function loadChat() {
-      const res = await fetch('/api/client/chat')
-      const data: ChatData = await res.json()
-      setMessages(data.messages)
-      setChatId(data.chat_id)
-      setChatStatus(data.status)
+      try {
+        const res = await fetch('/api/client/chat')
+        if (!res.ok) {
+          throw new Error(`Falha ao carregar dados do chat (status: ${res.status})`)
+        }
+        const data: ChatData = await res.json()
 
-      if (data.status === 'pending_tree') {
-        const treeRes = await fetch('/api/decision-tree/root')
-        setCurrentQuestion(await treeRes.json())
+        setMessages(data.messages || [])
+        setChatId(data.chat_id)
+        setChatStatus(data.status)
+
+        if (data.status === 'pending_tree') {
+          const treeRes = await fetch('/api/decision-tree/root')
+          if (!treeRes.ok) {
+            const errorData = await treeRes.json();
+            throw new Error(errorData.error || `Falha ao carregar árvore de decisões (status: ${treeRes.status})`)
+          }
+          const rootQuestion = await treeRes.json()
+          setCurrentQuestion(rootQuestion)
+        }
+      } catch (e: any) {
+        // Agora, se um erro acontecer, ele será capturado e exibido na tela.
+        setError(e.message)
+        console.error("Erro detalhado ao carregar chat:", e)
+      } finally {
+        // O finally garante que o loading sempre terminará, mesmo em caso de erro.
+        setLoading(false)
       }
-      setLoading(false)
     }
     loadChat()
   }, [])
@@ -43,9 +60,8 @@ export default function ClienteChatPage() {
     const newHistory = [...treeHistory, `${currentQuestion.content}`, `> ${option.content}`]
     setTreeHistory(newHistory)
     
-    // Adiciona a resposta do cliente à lista de mensagens para visualização
     const userChoiceMsg: Msg = {
-      id: Date.now(), // ID temporário
+      id: Date.now(),
       content: option.content,
       sender_type: 'client',
       created_at: new Date().toISOString()
@@ -57,40 +73,48 @@ export default function ClienteChatPage() {
       setCurrentQuestion(await res.json())
     } else {
       setCurrentQuestion(null)
-      // Simula uma mensagem do bot pedindo a dúvida final
        const botFinalMsg: Msg = {
         id: Date.now() + 1,
         content: 'Entendido. Agora, por favor, descreva sua dúvida em detalhes para que possamos analisar seu caso.',
-        sender_type: 'ia', // ou 'user' se for um "assistente virtual"
+        sender_type: 'ia',
         created_at: new Date().toISOString()
       }
       setMessages(prev => [...prev, botFinalMsg])
-      setChatStatus('ongoing') // Libera o input de texto
+      setChatStatus('ongoing')
     }
   }
 
   async function sendMessage(content: string) {
     if(!chatId) throw new Error("Chat ID não encontrado")
-    // Futuramente, se o status for 'pending_tree' e o usuário digitar, podemos fazer algo.
-    // Por enquanto, só funciona no modo 'ongoing'.
+
+    const fullContent = chatStatus === 'pending_tree'
+      ? [...treeHistory, `Dúvida: ${content}`].join('\n\n')
+      : content;
+    
     const res = await fetch('/api/client/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: { content } })
+      body: JSON.stringify({ message: { content: fullContent } })
     });
+
+    if (chatStatus === 'pending_tree') {
+        setChatStatus('ongoing');
+    }
+
     return res.json();
   }
 
   if (loading) return <main className="p-6">Carregando atendimento...</main>
+  if (error) return <main className="p-6 text-red-600">Erro ao carregar o chat: {error}</main>
 
   return (
     <ChatWindow
       title="Atendimento"
-      initialMessages={messages}
-      sendMessage={sendMessage}
+      messages={messages}
+      onSendMessage={sendMessage}
       interactiveQuestion={currentQuestion}
       onOptionClick={handleOptionClick}
-      isLocked={chatStatus === 'pending_tree'}
+      isInputLocked={chatStatus === 'pending_tree'}
     />
   )
 }
